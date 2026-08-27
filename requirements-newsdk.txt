@@ -1,0 +1,13 @@
+# app_cp_grn.py and app_fp_grn.py drive LlamaCloud through the rewritten SDK
+# (`from llama_cloud import LlamaCloud`), which only exists in llama-cloud>=1.0.
+# llama-cloud-services still pins llama-cloud<0.2 and imports ExtractAgent, a
+# name 2.x removed -- so the two genuinely cannot share one environment.
+#
+# Their Google-Sheets jobs therefore install this file, and their Supabase jobs
+# install requirements.txt on a separate runner. Do not merge the two.
+google-auth==2.23.0
+google-auth-oauthlib==1.1.0
+google-auth-httplib2==0.1.1
+google-api-python-client==2.100.0
+llama-cloud>=1.0
+schedule==1.2.0

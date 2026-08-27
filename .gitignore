@@ -1,0 +1,36 @@
+# Credentials - NEVER commit these
+credentials.json
+token.json
+.env
+
+# Logs
+*.log
+slveggies_automation.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+temp/
+rows.json

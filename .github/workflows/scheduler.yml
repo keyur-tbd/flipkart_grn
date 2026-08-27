@@ -1,0 +1,314 @@
+name: Flipkart GRN Schedulers
+
+# This repo is the one exception to "one repo, one scheduler": it runs four
+# Flipkart vendor pipelines that share a Google account, a spreadsheet and a
+# token, so they live together. Each has its own job below, its own LlamaCloud
+# agent, its own sheet tab and its own Supabase table.
+#
+#   app_cp_grn.py   Flipkart Crop Basket GRN  tab cbgrn         flipkart_cb_grn
+#   app_fp_grn.py   Flipkart PRR GRN          tab pprgrn        flipkart_ppr_grn
+#   app_fat_grn.py  Fatema GRN                tab fatemagrn     fatema_grn
+#   app_slv_grn.py  SL Veggies GRN            tab slveggiesgrn  slveggies_grn
+
+on:
+  # Run every 3 hours
+  schedule:
+    - cron: '0 */3 * * *'  # At minute 0 past every 3rd hour
+
+  # Allow manual triggering from GitHub UI
+  workflow_dispatch:
+
+jobs:
+  # --------------------------------------------------------------------- #
+  # Crop Basket: Gmail -> Drive -> Sheets, then Drive -> Supabase.
+  #
+  # Split across two jobs on purpose. app_cp_grn.py imports the rewritten
+  # `llama_cloud.LlamaCloud`, which only exists in llama-cloud>=1.0, while
+  # supabase_sink.py needs llama-cloud-services (pinned to llama-cloud<0.2,
+  # and importing an ExtractAgent name that 2.x removed). The two cannot be
+  # installed together, so they get a runner each.
+  # --------------------------------------------------------------------- #
+  crop-basket-sheets:
+    name: Crop Basket -> Sheets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-newsdk.txt
+
+      - name: Restore Google credentials
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          GOOGLE_TOKEN: ${{ secrets.GOOGLE_TOKEN }}
+        run: |
+          echo "$GOOGLE_CREDENTIALS" | base64 -d > credentials.json
+          echo "$GOOGLE_TOKEN" | base64 -d > token.json
+          echo "Credentials restored"
+
+      # No LLAMA_CLOUD_API_KEY step: this repo uses two different LlamaCloud
+      # keys and each app file already carries its own in CONFIG.
+      - name: Run workflow
+        run: |
+          echo "Starting Flipkart Crop Basket GRN workflow..."
+          python -c "
+          from app_cp_grn import MilkbasketAutomation, run_combined_workflow
+          automation = MilkbasketAutomation()
+          if automation.authenticate():
+              print(run_combined_workflow(automation))
+          else:
+              print('Authentication failed')
+              exit(1)
+          "
+
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f credentials.json token.json
+
+  crop-basket-supabase:
+    name: Crop Basket -> Supabase
+    runs-on: ubuntu-latest
+    # After the Sheets job, so any mail collected this run is already in Drive.
+    # always() so a Sheets failure still lets the Drive files already there load.
+    needs: crop-basket-sheets
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Restore Google credentials
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          GOOGLE_TOKEN: ${{ secrets.GOOGLE_TOKEN }}
+        run: |
+          echo "$GOOGLE_CREDENTIALS" | base64 -d > credentials.json
+          echo "$GOOGLE_TOKEN" | base64 -d > token.json
+
+      # --app and --source are both explicit: .env is gitignored, and four
+      # app*.py files sit side by side so neither can be inferred here.
+      - name: Drive -> Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -u supabase_sink.py --run --app app_cp_grn.py --source flipkart_cb
+
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f credentials.json token.json
+
+  # --------------------------------------------------------------------- #
+  # PRR: same two-runner split, same reason.
+  # --------------------------------------------------------------------- #
+  prr-sheets:
+    name: PRR -> Sheets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-newsdk.txt
+
+      - name: Restore Google credentials
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          GOOGLE_TOKEN: ${{ secrets.GOOGLE_TOKEN }}
+        run: |
+          echo "$GOOGLE_CREDENTIALS" | base64 -d > credentials.json
+          echo "$GOOGLE_TOKEN" | base64 -d > token.json
+          echo "Credentials restored"
+
+      - name: Run workflow
+        run: |
+          echo "Starting Flipkart PRR GRN workflow..."
+          python -c "
+          from app_fp_grn import MilkbasketAutomation, run_combined_workflow
+          automation = MilkbasketAutomation()
+          if automation.authenticate():
+              print(run_combined_workflow(automation))
+          else:
+              print('Authentication failed')
+              exit(1)
+          "
+
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f credentials.json token.json
+
+  prr-supabase:
+    name: PRR -> Supabase
+    runs-on: ubuntu-latest
+    needs: prr-sheets
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Restore Google credentials
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          GOOGLE_TOKEN: ${{ secrets.GOOGLE_TOKEN }}
+        run: |
+          echo "$GOOGLE_CREDENTIALS" | base64 -d > credentials.json
+          echo "$GOOGLE_TOKEN" | base64 -d > token.json
+
+      - name: Drive -> Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -u supabase_sink.py --run --app app_fp_grn.py --source flipkart_ppr
+
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f credentials.json token.json
+
+  # --------------------------------------------------------------------- #
+  # Fatema and SL Veggies read PDFs already sitting in Drive (no Gmail step)
+  # and both use llama-cloud-services, so each fits in a single job.
+  #
+  # NOTE: as of the initial push these two find 0 files. The committed
+  # token.json was granted drive.file, which only exposes files the app itself
+  # created -- and their Drive folders were made by hand. Re-consent
+  # flipkartquick@thebakersdozen.in with the full drive scope and both start
+  # working with no code change. They exit cleanly (0 files) until then.
+  # --------------------------------------------------------------------- #
+  fatema:
+    name: Fatema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Restore Google credentials
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          GOOGLE_TOKEN: ${{ secrets.GOOGLE_TOKEN }}
+        run: |
+          echo "$GOOGLE_CREDENTIALS" | base64 -d > credentials.json
+          echo "$GOOGLE_TOKEN" | base64 -d > token.json
+          echo "Credentials restored"
+
+      - name: Run workflow
+        run: |
+          echo "Starting Fatema GRN workflow..."
+          python -c "
+          from app_fat_grn import run_automation
+          run_automation()
+          "
+
+      - name: Drive -> Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -u supabase_sink.py --run --app app_fat_grn.py --source fatema
+
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f credentials.json token.json
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fatema-logs-${{ github.run_number }}
+          path: slveggies_automation.log
+          retention-days: 30
+          if-no-files-found: ignore
+
+  slveggies:
+    name: SL Veggies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Restore Google credentials
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          GOOGLE_TOKEN: ${{ secrets.GOOGLE_TOKEN }}
+        run: |
+          echo "$GOOGLE_CREDENTIALS" | base64 -d > credentials.json
+          echo "$GOOGLE_TOKEN" | base64 -d > token.json
+          echo "Credentials restored"
+
+      - name: Run workflow
+        run: |
+          echo "Starting SL Veggies GRN workflow..."
+          python -c "
+          from app_slv_grn import run_automation
+          run_automation()
+          "
+
+      - name: Drive -> Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -u supabase_sink.py --run --app app_slv_grn.py --source slveggies
+
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f credentials.json token.json
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slveggies-logs-${{ github.run_number }}
+          path: slveggies_automation.log
+          retention-days: 30
+          if-no-files-found: ignore
