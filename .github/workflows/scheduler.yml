@@ -76,6 +76,10 @@ jobs:
   crop-basket-supabase:
     name: Crop Basket -> Supabase
     runs-on: ubuntu-latest
+    # Backstop only. The job's own --budget-minutes stops it first;
+    # GitHub's default is 360 minutes, which let a stuck run keep
+    # writing for 3h16m on 2026-08-31.
+    timeout-minutes: 60
     # After the Sheets job, so any mail collected this run is already in Drive.
     # always() so a Sheets failure still lets the Drive files already there load.
     needs: crop-basket-sheets
@@ -108,7 +112,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python -u supabase_sink.py --run --app app_cp_grn.py --source flipkart_cb
+        run: python -u supabase_sink.py --run --app app_cp_grn.py --source flipkart_cb --budget-minutes 45
 
       - name: Cleanup credentials
         if: always()
@@ -163,6 +167,10 @@ jobs:
   prr-supabase:
     name: PRR -> Supabase
     runs-on: ubuntu-latest
+    # Backstop only. The job's own --budget-minutes stops it first;
+    # GitHub's default is 360 minutes, which let a stuck run keep
+    # writing for 3h16m on 2026-08-31.
+    timeout-minutes: 60
     needs: prr-sheets
     if: always()
     steps:
@@ -191,7 +199,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python -u supabase_sink.py --run --app app_fp_grn.py --source flipkart_ppr
+        run: python -u supabase_sink.py --run --app app_fp_grn.py --source flipkart_ppr --budget-minutes 45
 
       - name: Cleanup credentials
         if: always()
@@ -210,6 +218,10 @@ jobs:
   fatema:
     name: Fatema
     runs-on: ubuntu-latest
+    # Backstop only. The job's own --budget-minutes stops it first;
+    # GitHub's default is 360 minutes, which let a stuck run keep
+    # writing for 3h16m on 2026-08-31.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -245,7 +257,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python -u supabase_sink.py --run --app app_fat_grn.py --source fatema
+        run: python -u supabase_sink.py --run --app app_fat_grn.py --source fatema --budget-minutes 45
 
       - name: Cleanup credentials
         if: always()
@@ -263,6 +275,10 @@ jobs:
   slveggies:
     name: SL Veggies
     runs-on: ubuntu-latest
+    # Backstop only. The job's own --budget-minutes stops it first;
+    # GitHub's default is 360 minutes, which let a stuck run keep
+    # writing for 3h16m on 2026-08-31.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -298,7 +314,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python -u supabase_sink.py --run --app app_slv_grn.py --source slveggies
+        run: python -u supabase_sink.py --run --app app_slv_grn.py --source slveggies --budget-minutes 45
 
       - name: Cleanup credentials
         if: always()
