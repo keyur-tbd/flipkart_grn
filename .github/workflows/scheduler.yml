@@ -13,7 +13,7 @@ name: Flipkart GRN Schedulers
 on:
   # Run every 3 hours
   schedule:
-    - cron: '0 */3 * * *'  # At minute 0 past every 3rd hour
+    - cron: '54 */3 * * *'  # At minute 0 past every 3rd hour
 
   # Allow manual triggering from GitHub UI
   workflow_dispatch:
