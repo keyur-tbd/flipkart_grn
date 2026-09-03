@@ -15,6 +15,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
+from etl_alerts import guard
 
 # === NEW LLAMA CLOUD SDK ===
 try:
@@ -944,6 +945,9 @@ def run_combined_workflow(automation):
 
 
 def main():
+    # Shared disk guard: refuse to write if this pipeline is over its budget
+    # or the volume is full. Emails on warn/stop. Fails open. See etl_alerts.py.
+    guard("grn")
     automation = MilkbasketAutomation()
     if not automation.authenticate():
         logger.error("Authentication failed. Exiting.")
