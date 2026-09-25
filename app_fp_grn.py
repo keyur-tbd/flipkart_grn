@@ -42,8 +42,8 @@ CONFIG = {
     'gmail': {
         'sender': "prrfreshproducepvtltd@gmail.com",
         'search_term': "Invoice, Tax Invoice",
-        'days_back': 2,
-        'max_results': 100,
+        'days_back': 21,
+        'max_results': 1000,
         'gdrive_folder_id': "1yNPbQRiqakoKgQhwbX1cUV0EmA80CjjR"
     },
     'pdf': {
@@ -83,6 +83,10 @@ STATIC_POS_HEADERS = [
     # Metadata
     "source_file", "drive_file_id", "processed_date",
 ]
+
+
+# see process_gmail_workflow: attachments of mails from here on are stored as '<message id>_<name>'
+PREFIX_NAMES_FROM_MS = int(__import__('datetime').datetime.fromisoformat('2026-09-25T14:00:00+05:30').timestamp() * 1000)
 
 
 class MilkbasketAutomation:
@@ -178,8 +182,18 @@ class MilkbasketAutomation:
             query_parts.append(f"after:{start_date.strftime('%Y/%m/%d')}")
             query = " ".join(query_parts)
             self.log(f"Searching Gmail with query: {query}", "INFO")
-            result = self.gmail_service.users().messages().list(userId='me', q=query, maxResults=max_results).execute()
-            messages = result.get('messages', [])
+            # Gmail returns at most 500 ids per page whatever maxResults says, so a busy
+            # window would silently drop the rest. Page until max_results or the end.
+            messages, page_token = [], None
+            while len(messages) < max_results:
+                result = self.gmail_service.users().messages().list(
+                    userId='me', q=query, pageToken=page_token,
+                    maxResults=min(500, max_results - len(messages))
+                ).execute()
+                messages.extend(result.get('messages', []))
+                page_token = result.get('nextPageToken')
+                if not page_token:
+                    break
             self.log(f"Gmail search returned {len(messages)} messages", "INFO")
             return messages
         try:
@@ -274,6 +288,10 @@ class MilkbasketAutomation:
                     self.log(f"Processing email: {subject}", "INFO")
 
                     message = self.gmail_service.users().messages().get(userId='me', id=email['id'], format='full').execute()
+                    # PRR sends every voucher as 'Accounting Voucher Print.pdf' (and a few other fixed names); a name
+                    # already in Drive is skipped, so only the first ever landed. From the cutover on, attachments are
+                    # stored as '<message id>_<name>'; older mails keep plain names so a re-read cannot re-upload them.
+                    self._prefix_attachment_names = int(message.get('internalDate', 0)) >= PREFIX_NAMES_FROM_MS
                     attachment_count = self._extract_attachments_from_email(email['id'], message['payload'], config, base_folder_id)
 
                     total_attachments += attachment_count
@@ -347,6 +365,8 @@ class MilkbasketAutomation:
                 type_folder_id = self._create_drive_folder(self._classify_extension(filename), search_folder_id)
 
                 clean_filename = self._sanitize_filename(filename)
+                if getattr(self, '_prefix_attachment_names', False):
+                    clean_filename = f"{message_id}_{clean_filename}"
                 if not self._file_exists_in_folder(clean_filename, type_folder_id):
                     file_metadata = {'name': clean_filename, 'parents': [type_folder_id]}
                     media = MediaIoBaseUpload(BytesIO(file_data), mimetype='application/octet-stream', resumable=True)

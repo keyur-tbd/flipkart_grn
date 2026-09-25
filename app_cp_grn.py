@@ -43,8 +43,8 @@ CONFIG = {
     'gmail': {
         'sender': "accounts@cropbasket.co.in",
         'search_term': "Goods Receipt Note for Purchase Order",
-        'days_back': 2,
-        'max_results': 100,
+        'days_back': 21,
+        'max_results': 1000,
         'gdrive_folder_id': "1Sntk2nnKXNz6bRVLwdXDaJJGWN0XwNuF"
     },
     'pdf': {
@@ -179,8 +179,18 @@ class MilkbasketAutomation:
             query_parts.append(f"after:{start_date.strftime('%Y/%m/%d')}")
             query = " ".join(query_parts)
             self.log(f"Searching Gmail with query: {query}", "INFO")
-            result = self.gmail_service.users().messages().list(userId='me', q=query, maxResults=max_results).execute()
-            messages = result.get('messages', [])
+            # Gmail returns at most 500 ids per page whatever maxResults says, so a busy
+            # window would silently drop the rest. Page until max_results or the end.
+            messages, page_token = [], None
+            while len(messages) < max_results:
+                result = self.gmail_service.users().messages().list(
+                    userId='me', q=query, pageToken=page_token,
+                    maxResults=min(500, max_results - len(messages))
+                ).execute()
+                messages.extend(result.get('messages', []))
+                page_token = result.get('nextPageToken')
+                if not page_token:
+                    break
             self.log(f"Gmail search returned {len(messages)} messages", "INFO")
             return messages
         try:
